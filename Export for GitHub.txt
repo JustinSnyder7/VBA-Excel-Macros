@@ -1,0 +1,2312 @@
+This document contains no SPI or proprietary information. It contains VBA Macro code that was authored by myself. I am exporting these to include on my personal GitHub. I received permission from my supervisor to do so.
+
+Sub UIDs()
+'
+' UIDs Macro
+'
+' Keyboard Shortcut: Ctrl+Shift+U
+'
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'''''''''' Replace system assigned UIDs with actual UIDs '''''''''''''
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+' Clear any active filters
+    ActiveSheet.AutoFilterMode = False
+
+' Sort by UserID and then Timestamp
+    With ActiveWorkbook.ActiveSheet.Sort
+        .SortFields.Clear
+        .SortFields.Add Key:=Range("F1"), Order:=xlAscending
+        .SortFields.Add Key:=Range("D1"), Order:=xlAscending
+        .SetRange Range("A:AF")
+        .Header = xlYes
+        .Apply
+    End With
+
+' Init vars
+    Dim realUID, systemUID
+    Dim rngA, rngB As Range
+    
+    Set ws = ActiveSheet
+    count = ws.Cells(Rows.count, "A").End(xlUp).Row
+    i = 2
+
+' Loop for NLP feedback
+Do While i <= count
+    
+    If InStr(1, Cells(i, 5).Value, "user") > 0 And _
+        InStr(1, Cells(i, 14).Value, "<span hidden id='uid'>") > 0 Then
+            systemUID = Cells(i, 5).Value
+            realUID = Left(Right(Cells(i, 14).Value, 13), 5)
+            
+            Columns("E:E").Select
+            Selection.Replace What:=systemUID, Replacement:=realUID, lookat:=xlPart _
+            , SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+            ReplaceFormat:=False, FormulaVersion:=xlReplaceFormula2
+        
+    End If
+         
+    i = i + 1
+        
+Loop
+
+End Sub
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Sub AgentDriver()
+'
+' AgentDriver Macro
+'
+
+'
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim i As Long
+    Dim lastRow As Long
+    
+    ' Set the worksheet and table
+    Set ws = Worksheets("Sheet1") 'replace with your sheet name
+    Set tbl = ws.ListObjects("ytdIntegrated")
+    lastRow = tbl.Range.Rows.count
+    ' Loop through each row in the table
+    For i = lastRow To 2 Step -1
+        ' Check if the intent is "AgentInitiation"
+        If tbl.DataBodyRange(i, tbl.ListColumns("INTENT").Index) = "AgentInitiation" Then
+            ' Check if the user ID in this row is the same as in the previous row
+            If tbl.DataBodyRange(i, tbl.ListColumns("USER ID").Index) = tbl.DataBodyRange(i - 1, tbl.ListColumns("USER ID").Index) Then
+                ' Label the previous row
+                tbl.DataBodyRange(i - 1, tbl.ListColumns("DRIVER").Index) = "Agent" 'replace with your label column and text
+            End If
+        End If
+    Next i
+    
+End Sub
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Sub nuCleaner()
+'
+' nuCleaner Macro
+'
+
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'''''''''''''''''''''''''''''''''''' Outline, explainer '''''''''''''''''''''''''''''''''''''
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+' 1. Make a copy of raw data.
+' 1a. Rename skills to proper naming convention
+' 2. Remove duplicate menu responses.
+' 3. Remove extra data not needed for any functions.
+' 4. Break out datetime to date and time, sort accordingly.
+' 5. Add response to intent line.
+' 6. Thumbs up/down and feedback survey.
+' 6a. New feedback component.
+' 7. Break data into Menu vs NLP skill sheets.
+' 8. Filter for unresolved Intent, copy to new Integrated tab.
+' 9. Go back to NLP tab, filter again and then copy to that same new tab.
+' 10. For cleaning menu driven data from the DA.
+' 11. Add in unresolvedIntents
+' 12. Sort, select and copy data
+
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+' Temporarily disable automatic calculation so the macro runs quicker.
+Application.Calculation = xlManual
+
+' Init vars
+    Dim count, i As Long
+    Dim ws As Worksheet
+    Dim cellHolder, feedbackUID, rng
+    Dim BOT_NAME, USER_UTTERANCE, ENTITY_MATCHES, BOT_RESPONSE, COMPONENT_NAME, DOMAIN_USERID, INTENT, THUMBS, INTENT_LIST, offsetVal
+    
+' Assign initial values
+    BOT_NAME = 1
+    DOMAIN_USERID = 4
+    USER_UTTERANCE = 6
+    BOT_RESPONSE = 7
+    COMPONENT_NAME = 8
+    ENTITY_MATCHES = 9
+    INTENT = 11
+    THUMBS = 12
+    INTENT_LIST = 5
+    offsetVal = 2 ' offset to get to BOT_RESPONSE col
+
+
+' 1. Make a copy of raw data. ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+' Verify that you're on the correct file, prevents accidentally running this macro on another file.
+    If ActiveSheet.Name <> "SuperDA_Data" Then
+        MsgBox ("Does not appear to be raw data, if it is, remove testing data first...")
+        Exit Sub
+    End If
+
+' Clear any active filters
+    ActiveSheet.AutoFilterMode = False
+   
+' Make a backup copy of sheet for use with Deflection macro
+    Sheets("SuperDA_Data").Select
+    Sheets("SuperDA_Data").Copy after:=Sheets(1)
+
+' Rename sheet to backupCopy
+    ActiveSheet.Name = "backupCopy"
+    
+' <---- Move back to First Sheet
+    Worksheets(1).Activate
+    
+
+' 1a. Rename skills to proper naming convention '''''''''''''''''''''''''''''''''''''''''''''''''''
+
+    Columns("A:A").Select
+    
+    Selection.Replace What:="FMLA*", Replacement:="DAFMLA", lookat:=xlPart _
+        , SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False, FormulaVersion:=xlReplaceFormula2
+
+    Selection.Replace What:="JA*", Replacement:="DAJA", lookat:=xlPart _
+        , SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False, FormulaVersion:=xlReplaceFormula2
+
+    Selection.Replace What:="Policy*", Replacement:="DAPOLICY", lookat:=xlPart _
+        , SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False, FormulaVersion:=xlReplaceFormula2
+
+    Selection.Replace What:="COVID*", Replacement:="DACOVID", lookat:=xlPart _
+        , SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False, FormulaVersion:=xlReplaceFormula2
+        
+    Selection.Replace What:="Birth*", Replacement:="DABIRTH", lookat:=xlPart _
+        , SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False, FormulaVersion:=xlReplaceFormula2
+        
+    Selection.Replace What:="AccountsPayable*", Replacement:="DAAP", lookat:=xlPart _
+        , SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False, FormulaVersion:=xlReplaceFormula2
+        
+    Selection.Replace What:="Miscellaneous*", Replacement:="DAMISC", lookat:=xlPart _
+        , SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False, FormulaVersion:=xlReplaceFormula2
+        
+    Selection.Replace What:="Payroll*", Replacement:="DAPAYROLL", lookat:=xlPart _
+        , SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False, FormulaVersion:=xlReplaceFormula2
+        
+    Selection.Replace What:="Super*", Replacement:="SuperDA", lookat:=xlPart _
+        , SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False, FormulaVersion:=xlReplaceFormula2
+
+
+' 2. Remove duplicate menu responses.  Filter COVID and Birth Skills ''''''''''''''''''''''''''''
+' filter COMPONENT_NAME for System.CommonResponse and System.Text
+' filter ENTITY_MATCHES for {} and delete them.
+
+' Filter Menu Skills
+    Rows("1:1").Select
+    Selection.AutoFilter
+    ActiveSheet.Range("$A$1:$AE$3824").AutoFilter Field:=BOT_NAME, Criteria1:= _
+        "=DABIRTH", Operator:=xlOr, Criteria2:="=DACOVID"
+    
+' Filter COMPONENT_NAME, column 15 in this state before delete.
+'    Rows("1:1").Select
+'    Selection.AutoFilter
+    ActiveSheet.Range("$A$1:$AE$3824").AutoFilter Field:=15, Criteria1:= _
+        "=System.CommonResponse", Operator:=xlOr, Criteria2:="=System.Text"
+    
+' Filter ENTITY_MATCHES
+'    Rows("1:1").Select
+'    Selection.AutoFilter
+    ActiveSheet.Range("$A$1:$AE$3824").AutoFilter Field:=ENTITY_MATCHES, Criteria1:= _
+        "={}"
+
+' Select and delete filtered data
+    Dim sh As Worksheet, LstRw As Long
+
+    Set sh = Sheets("SuperDA_Data")
+    With sh
+        LstRw = .Cells(.Rows.count, "A").End(xlUp).Row
+        Set rng = .Range("A2:A" & LstRw).SpecialCells(xlCellTypeVisible)
+        rng.EntireRow.Delete
+        .AutoFilterMode = False
+    End With
+
+' Clear any active filters
+    ActiveSheet.AutoFilterMode = False
+    
+    
+' 3. Remove extra data not needed for any functions. ''''''''''''''''''''''''''''''''''''''''''''
+    Columns("S:AF").Select
+    Selection.Delete Shift:=xlToLeft
+
+    Columns("K:L").Select
+    Selection.Delete Shift:=xlToLeft
+
+    Columns("F:I").Select
+    Selection.Delete Shift:=xlToLeft
+    
+    Columns("B:C").Select
+    Selection.Delete Shift:=xlToLeft
+    
+
+' 4. Break out datetime to date and time, sort accordingly. ''''''''''''''''''''''''''''''''''''''
+' Add two new columns
+    Columns("C:C").Select
+    Selection.Insert Shift:=xlToRight, CopyOrigin:=xlFormatFromLeftOrAbove
+    Selection.Insert Shift:=xlToRight, CopyOrigin:=xlFormatFromLeftOrAbove
+     
+' Delimit TIMESTAMP by " " into 3 columns
+    Columns("B:B").Select
+    Selection.TextToColumns Destination:=Range("B1"), DataType:=xlDelimited, _
+        TextQualifier:=xlNone, ConsecutiveDelimiter:=True, Tab:=False, Semicolon _
+        :=False, Comma:=False, Space:=True, Other:=False, FieldInfo:=Array( _
+        Array(1, 4), Array(2, 1), Array(3, 1)), TrailingMinusNumbers:=True
+    
+    Range("$B$1").Value = "DATE"
+    Range("$C$1").Value = "TIME"
+
+' Delete column D
+    Columns("D").Select
+    Selection.Delete Shift:=xlToLeft
+
+' Resize date column to display properly
+    Columns("B:B").EntireColumn.AutoFit
+    Columns("C:C").EntireColumn.AutoFit
+    Columns("E:E").ColumnWidth = 1.71
+    Columns("F:F").ColumnWidth = 40
+    Columns("G:G").ColumnWidth = 40
+
+' Sort by Date, UserID and then Time
+    With ActiveWorkbook.ActiveSheet.Sort
+        .SortFields.Clear
+        .SortFields.Add Key:=Range("B1"), Order:=xlAscending
+        .SortFields.Add Key:=Range("D1"), Order:=xlAscending
+        .SortFields.Add Key:=Range("C1"), Order:=xlAscending
+        .SetRange Range("A:K")
+        .Header = xlYes
+        .Apply
+    End With
+  
+    Range("S1").Select
+
+
+' 5. Add response to intent line. ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+' Loop to add response to correct line
+    Set ws = ActiveSheet
+    count = ws.Cells(Rows.count, "A").End(xlUp).Row
+    i = 2
+
+Do While i <= count
+      
+    If Cells(i, INTENT_LIST).Value <> "[]" Then ' If cell shows an intent list...
+              
+        If Cells(i, INTENT_LIST).Offset(1, offsetVal).Value <> "" Then
+            'MsgBox ("At line " & i & " there is a response 1 line down")
+            cellHolder = Cells(i, INTENT_LIST).Offset(1, offsetVal).Value
+            Cells(i, INTENT_LIST).Offset(0, offsetVal).Value = cellHolder
+        
+        ElseIf Cells(i, INTENT_LIST).Offset(2, offsetVal).Value <> "" Then
+            'MsgBox ("At line " & i & " there is a response 2 lines down")
+            cellHolder = Cells(i, INTENT_LIST).Offset(2, offsetVal).Value
+            Cells(i, INTENT_LIST).Offset(0, offsetVal).Value = cellHolder
+        
+        ElseIf Cells(i, INTENT_LIST).Offset(3, offsetVal).Value <> "" Then
+            'MsgBox ("At line " & i & " there is a response 3 lines down")
+            cellHolder = Cells(i, INTENT_LIST).Offset(3, offsetVal).Value
+            Cells(i, INTENT_LIST).Offset(0, offsetVal).Value = cellHolder
+            
+        ElseIf Cells(i, INTENT_LIST).Offset(4, offsetVal).Value <> "" Then
+            'MsgBox ("At line " & i & " there is a response 4 lines down")
+            cellHolder = Cells(i, INTENT_LIST).Offset(4, offsetVal).Value
+            Cells(i, INTENT_LIST).Offset(0, offsetVal).Value = cellHolder
+            
+        ElseIf Cells(i, INTENT_LIST).Offset(5, offsetVal).Value <> "" Then
+            'MsgBox ("At line " & i & " there is a response 4 lines down")
+            cellHolder = Cells(i, INTENT_LIST).Offset(4, offsetVal).Value
+            Cells(i, INTENT_LIST).Offset(0, offsetVal).Value = cellHolder
+            
+        ElseIf Cells(i, INTENT_LIST).Offset(6, offsetVal).Value <> "" Then
+            'MsgBox ("At line " & i & " there is a response 4 lines down")
+            cellHolder = Cells(i, INTENT_LIST).Offset(4, offsetVal).Value
+            Cells(i, INTENT_LIST).Offset(0, offsetVal).Value = cellHolder
+            
+        ElseIf Cells(i, INTENT_LIST).Offset(7, offsetVal).Value <> "" Then
+            'MsgBox ("At line " & i & " there is a response 4 lines down")
+            cellHolder = Cells(i, INTENT_LIST).Offset(4, offsetVal).Value
+            Cells(i, INTENT_LIST).Offset(0, offsetVal).Value = cellHolder
+            
+        ElseIf Cells(i, INTENT_LIST).Offset(8, offsetVal).Value <> "" Then
+            'MsgBox ("At line " & i & " there is a response 4 lines down")
+            cellHolder = Cells(i, INTENT_LIST).Offset(4, offsetVal).Value
+            Cells(i, INTENT_LIST).Offset(0, offsetVal).Value = cellHolder
+            
+        ElseIf Cells(i, INTENT_LIST).Offset(9, offsetVal).Value <> "" Then
+            'MsgBox ("At line " & i & " there is a response 4 lines down")
+            cellHolder = Cells(i, INTENT_LIST).Offset(4, offsetVal).Value
+            Cells(i, INTENT_LIST).Offset(0, offsetVal).Value = cellHolder
+            
+        ElseIf Cells(i, INTENT_LIST).Offset(10, offsetVal).Value <> "" Then
+            'MsgBox ("At line " & i & " there is a response 4 lines down")
+            cellHolder = Cells(i, INTENT_LIST).Offset(4, offsetVal).Value
+            Cells(i, INTENT_LIST).Offset(0, offsetVal).Value = cellHolder
+        End If
+
+    End If
+
+    i = i + 1
+        
+Loop
+    
+' 6. Thumbs up/down and feedback survey. '''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+' Clear any active filters
+    'ActiveSheet.AutoFilterMode = False
+
+' Rename column S to hold thumbs up/down
+    'Range("$L$1").Value = "THUMBS"
+    
+' Rename column T to hold thumbs up/down
+    'Range("$M$1").Value = "SURVEY"
+
+' Prep vars for loop.
+    'Set ws = ActiveSheet
+    'count = ws.Cells(Rows.count, "A").End(xlUp).Row
+    'i = 2
+
+
+    'i = 2
+
+'Do While i <= count
+    
+    'If Cells(i, INTENT).Value = "fdbck_thumbsDown" Or _
+        'Cells(i, INTENT).Value = "fdbck_thumbsUp" Then
+        
+        'feedbackUID = Cells(i, DOMAIN_USERID).Value
+        
+        ' If UID is still equal to the same UID check to make sure has a question and answer and also System.Intent
+        'If Cells(i, DOMAIN_USERID).Offset(-1, 0).Value = feedbackUID And _
+            'Cells(i, INTENT).Offset(-1, 0).Value <> "" Then
+            'If Cells(i, USER_UTTERANCE).Value <> Cells(i, USER_UTTERANCE).Offset(-1, 0).Value Then
+                'Cells(i, THUMBS).Offset(-1, 0).Value = Cells(i, INTENT).Value
+            'End If
+
+        'ElseIf Cells(i, DOMAIN_USERID).Offset(-2, 0).Value = feedbackUID And _
+            'Cells(i, INTENT).Offset(-2, 0).Value <> "" Then
+            
+            'If Cells(i, USER_UTTERANCE).Value <> Cells(i, USER_UTTERANCE).Offset(-2, 0).Value Then
+                'Cells(i, THUMBS).Offset(-2, 0).Value = Cells(i, INTENT).Value
+            'End If
+        
+        'ElseIf Cells(i, DOMAIN_USERID).Offset(-3, 0).Value = feedbackUID And _
+            'Cells(i, INTENT).Offset(-3, 0).Value <> "" Then
+            
+            'If Cells(i, USER_UTTERANCE).Value <> Cells(i, USER_UTTERANCE).Offset(-3, 0).Value Then
+                'Cells(i, THUMBS).Offset(-3, 0).Value = Cells(i, INTENT).Value
+            'End If
+        
+        'ElseIf Cells(i, DOMAIN_USERID).Offset(-4, 0).Value = feedbackUID And _
+            'Cells(i, INTENT).Offset(-4, 0).Value <> "" Then
+            
+            'If Cells(i, USER_UTTERANCE).Value <> Cells(i, USER_UTTERANCE).Offset(-4, 0).Value Then
+                'Cells(i, THUMBS).Offset(-4, 0).Value = Cells(i, INTENT).Value
+            'End If
+            
+        'ElseIf Cells(i, DOMAIN_USERID).Offset(-5, 0).Value = feedbackUID And _
+            'Cells(i, INTENT).Offset(-5, 0).Value <> "" Then
+            
+            'If Cells(i, USER_UTTERANCE).Value <> Cells(i, USER_UTTERANCE).Offset(-5, 0).Value Then
+                'Cells(i, THUMBS).Offset(-5, 0).Value = Cells(i, INTENT).Value
+            'End If
+            
+        'ElseIf Cells(i, DOMAIN_USERID).Offset(-6, 0).Value = feedbackUID And _
+            'Cells(i, INTENT).Offset(-6, 0).Value <> "" Then
+            
+            'If Cells(i, USER_UTTERANCE).Value <> Cells(i, USER_UTTERANCE).Offset(-6, 0).Value Then
+                'Cells(i, THUMBS).Offset(-6, 0).Value = Cells(i, INTENT).Value
+            'End If
+            
+        'ElseIf Cells(i, DOMAIN_USERID).Offset(-7, 0).Value = feedbackUID And _
+            'Cells(i, INTENT).Offset(-7, 0).Value <> "" Then
+            
+            'If Cells(i, USER_UTTERANCE).Value <> Cells(i, USER_UTTERANCE).Offset(-7, 0).Value Then
+                'Cells(i, THUMBS).Offset(-7, 0).Value = Cells(i, INTENT).Value
+            'End If
+            
+        'ElseIf Cells(i, DOMAIN_USERID).Offset(-8, 0).Value = feedbackUID And _
+            'Cells(i, INTENT).Offset(-8, 0).Value <> "" Then
+            
+            'If Cells(i, USER_UTTERANCE).Value <> Cells(i, USER_UTTERANCE).Offset(-8, 0).Value Then
+                'Cells(i, THUMBS).Offset(-8, 0).Value = Cells(i, INTENT).Value
+            'End If
+            
+        'ElseIf Cells(i, DOMAIN_USERID).Offset(-9, 0).Value = feedbackUID And _
+            'Cells(i, INTENT).Offset(-9, 0).Value <> "" Then
+            
+            'If Cells(i, USER_UTTERANCE).Value <> Cells(i, USER_UTTERANCE).Offset(-9, 0).Value Then
+                'Cells(i, THUMBS).Offset(-9, 0).Value = Cells(i, INTENT).Value
+            'End If
+            
+        'ElseIf Cells(i, DOMAIN_USERID).Offset(-10, 0).Value = feedbackUID And _
+            'Cells(i, INTENT).Offset(-10, 0).Value <> "" Then
+            
+            'If Cells(i, USER_UTTERANCE).Value <> Cells(i, USER_UTTERANCE).Offset(-10, 0).Value Then
+                'Cells(i, THUMBS).Offset(-10, 0).Value = Cells(i, INTENT).Value
+            'End If
+            
+'        End If
+'    End If
+      
+'        i = i + 1
+        
+'Loop
+
+' change text to either positiveFeedback or negativeFeedback
+'    Columns("L:L").Select
+    
+'    Selection.Replace What:="fdbck_thumbsUp", Replacement:="positiveFeedback", lookat:=xlPart _
+        , SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False, FormulaVersion:=xlReplaceFormula2
+
+'    Selection.Replace What:="fdbck_thumbsDown", Replacement:="negativeFeedback", lookat:=xlPart _
+        , SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False, FormulaVersion:=xlReplaceFormula2
+
+
+    
+' 6b. New feedback component. ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+' Clear any active filters
+    ActiveSheet.AutoFilterMode = False
+
+' Rename column S to hold thumbs up/down
+    Range("$L$1").Value = "THUMBS"
+    
+' Rename column T to hold thumbs up/down
+    Range("$M$1").Value = "SURVEY"
+
+' Prep vars for loop.
+    Set ws = ActiveSheet
+    count = ws.Cells(Rows.count, "A").End(xlUp).Row
+    i = 2
+
+
+    i = 2
+
+Do While i <= count
+    
+    If Cells(i, COMPONENT_NAME).Value = "System.SetCustomMetrics" Then
+        
+        feedbackUID = Cells(i, DOMAIN_USERID).Value
+        
+        ' If UID is still equal to the same UID check to make sure has a question and answer and also System.Intent
+        If Cells(i, DOMAIN_USERID).Offset(-1, 0).Value = feedbackUID And _
+            Cells(i, INTENT).Offset(-1, 0).Value <> "" Then
+                Cells(i, THUMBS).Offset(-1, 0).Value = Cells(i, USER_UTTERANCE).Value
+
+
+        ElseIf Cells(i, DOMAIN_USERID).Offset(-2, 0).Value = feedbackUID And _
+            Cells(i, INTENT).Offset(-2, 0).Value <> "" Then
+                Cells(i, THUMBS).Offset(-2, 0).Value = Cells(i, USER_UTTERANCE).Value
+
+        
+        ElseIf Cells(i, DOMAIN_USERID).Offset(-3, 0).Value = feedbackUID And _
+            Cells(i, INTENT).Offset(-3, 0).Value <> "" Then
+                Cells(i, THUMBS).Offset(-3, 0).Value = Cells(i, USER_UTTERANCE).Value
+
+        
+        ElseIf Cells(i, DOMAIN_USERID).Offset(-4, 0).Value = feedbackUID And _
+            Cells(i, INTENT).Offset(-4, 0).Value <> "" Then
+                Cells(i, THUMBS).Offset(-4, 0).Value = Cells(i, USER_UTTERANCE).Value
+
+            
+        ElseIf Cells(i, DOMAIN_USERID).Offset(-5, 0).Value = feedbackUID And _
+            Cells(i, INTENT).Offset(-5, 0).Value <> "" Then
+                Cells(i, THUMBS).Offset(-5, 0).Value = Cells(i, USER_UTTERANCE).Value
+
+            
+        ElseIf Cells(i, DOMAIN_USERID).Offset(-6, 0).Value = feedbackUID And _
+            Cells(i, INTENT).Offset(-6, 0).Value <> "" Then
+                Cells(i, THUMBS).Offset(-6, 0).Value = Cells(i, USER_UTTERANCE).Value
+
+            
+        ElseIf Cells(i, DOMAIN_USERID).Offset(-7, 0).Value = feedbackUID And _
+            Cells(i, INTENT).Offset(-7, 0).Value <> "" Then
+                Cells(i, THUMBS).Offset(-7, 0).Value = Cells(i, USER_UTTERANCE).Value
+
+            
+        ElseIf Cells(i, DOMAIN_USERID).Offset(-8, 0).Value = feedbackUID And _
+            Cells(i, INTENT).Offset(-8, 0).Value <> "" Then
+                Cells(i, THUMBS).Offset(-8, 0).Value = Cells(i, USER_UTTERANCE).Value
+
+            
+        ElseIf Cells(i, DOMAIN_USERID).Offset(-9, 0).Value = feedbackUID And _
+            Cells(i, INTENT).Offset(-9, 0).Value <> "" Then
+                Cells(i, THUMBS).Offset(-9, 0).Value = Cells(i, USER_UTTERANCE).Value
+
+            
+        ElseIf Cells(i, DOMAIN_USERID).Offset(-10, 0).Value = feedbackUID And _
+            Cells(i, INTENT).Offset(-10, 0).Value <> "" Then
+                Cells(i, THUMBS).Offset(-10, 0).Value = Cells(i, USER_UTTERANCE).Value
+
+            
+        End If
+    End If
+      
+        i = i + 1
+        
+Loop
+
+' change text to either positiveFeedback or negativeFeedback
+    Columns("L:L").Select
+    
+    Selection.Replace What:="fdbck_thumbsUp", Replacement:="positiveFeedback", lookat:=xlPart _
+        , SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False, FormulaVersion:=xlReplaceFormula2
+
+    Selection.Replace What:="fdbck_thumbsDown", Replacement:="negativeFeedback", lookat:=xlPart _
+        , SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False, FormulaVersion:=xlReplaceFormula2
+    
+    
+' 7. Break data into Menu vs NLP skill sheets. '''''''''''''''''''''''''''''''''''''''''''''''''
+    
+' Filter Menu Skills
+    Rows("1:1").Select
+    Selection.AutoFilter
+    ActiveSheet.Range("$A$1:$AE$3824").AutoFilter Field:=1, Criteria1:= _
+        "=DABIRTH", Operator:=xlOr, Criteria2:="=DACOVID"
+
+' Select data from sheet and copy
+    Set rng = ActiveSheet.UsedRange
+    Intersect(rng, rng.Offset(0)).Copy
+
+    Sheets.Add after:=ActiveSheet
+    ActiveSheet.Paste
+    
+' Rename sheet to Daily MenuDA
+    ActiveSheet.Name = "Menu Data"
+
+' Select all cells, just looks cleaner
+    Range("A1").Select
+
+
+' <------ Move back to First Sheet
+    Worksheets(1).Activate
+
+
+' Back at first sheet - unselect previous copied data
+    Application.CutCopyMode = False
+    
+' Now filter for NLP DAs plus SuperDA
+    ActiveSheet.Range("$A$1:$AE$3824").AutoFilter Field:=1
+    ActiveSheet.Range("$A$1:$AE$3824").AutoFilter Field:=1, Criteria1:=Array( _
+        "SuperDA", "DAFMLA", "DAJA", "DAMISC", "DAPOLICY", "DAPAYROLL", "Initial", "DAAP"), Operator:=xlFilterValues
+
+' Select data from sheet and copy
+    Set rng = ActiveSheet.UsedRange
+    Intersect(rng, rng.Offset(0)).Copy
+
+
+    Sheets.Add after:=ActiveSheet
+    ActiveSheet.Paste
+    
+' Rename sheet to Daily MenuDA
+    ActiveSheet.Name = "NLP Data"
+
+' Select all cells, just looks cleaner
+    Range("A1").Select
+    
+    Set ws = Sheets("NLP Data")
+    count = ws.Cells(Rows.count, "A").End(xlUp).Row
+
+
+' 8. Filter unresolvedIntents from INTENT, copy to new Integrated tab. '''''''''''''''''''''''''''''''''''''''
+'    ActiveSheet.Range("$A$1:$H$45").AutoFilter Field:=8, Criteria1:="unresolvedIntent", Operator:=xlFilterValues
+   
+'    Range("A1").Select
+     
+' Select and copy cleaned data
+'    Set rng = ActiveSheet.UsedRange
+'    Intersect(rng, rng.Offset(1)).Copy
+    
+' add new sheet
+    Sheets.Add after:=ActiveSheet
+'    ActiveSheet.Paste
+    
+' Rename sheet to Integrated
+   ActiveSheet.Name = "Integrated"
+ 
+' declare variable to count rows
+    Dim LR As Long
+    LR = Cells(Rows.count, 1).End(xlUp).Row
+
+' Move back to NLP sheet
+    Worksheets(2).Activate
+    
+
+' 9. Go back to NLP tab, filter again and then copy to that same new tab. ''''''''''''''''''''''
+' Utilize color filtering to mark out multiple conditions from INTENT column
+i = 2
+
+Do While i <= count
+
+    If Cells(i, INTENT).Value <> "Greeting" _
+    And Cells(i, INTENT).Value <> "ExitFlow" _
+    And Cells(i, INTENT).Value <> "InvocationJA" _
+    And Cells(i, INTENT).Value <> "InvocationPolicy" _
+    And Cells(i, INTENT).Value <> "Introduction" _
+    And Cells(i, INTENT).Value <> "IcanHelpMenu" _
+    And Cells(i, INTENT).Value <> "PayrollIntroduction" _
+    And Cells(i, INTENT).Value <> "Other Topics" _
+    And Cells(i, INTENT).Value <> "fdbck_didntAnswer" _
+    And Cells(i, INTENT).Value <> "fdbck_other" _
+    And Cells(i, INTENT).Value <> "fdbck_answerConfusing" _
+    And Cells(i, INTENT).Value <> "fdbck_notUserFriendly" _
+    And Cells(i, INTENT).Value <> "fdbck_thumbsDown" _
+    And Cells(i, INTENT).Value <> "fdbck_thumbsUp" _
+    And Cells(i, INTENT).Value <> "SupervisorAttendance" _
+    And Cells(i, INTENT).Value <> "SupervisorCompensation" _
+    And Cells(i, INTENT).Value <> "SupervisorJA" _
+    And Cells(i, INTENT).Value <> "SupervisorPayroll" _
+    And Cells(i, INTENT).Value <> "SupervisorPolicy" _
+    And Cells(i, INTENT).Value <> "SupervisorRole" _
+    And Cells(i, INTENT).Value <> "InvocationFMLA" Then
+    
+    Cells(i, INTENT).Interior.Color = RGB(38, 201, 218)
+    
+    End If
+    
+    i = i + 1
+    
+Loop
+
+ws.Range("A1").AutoFilter Field:=INTENT, Criteria1:=RGB(38, 201, 218), Operator:=xlFilterCellColor
+
+ws.Cells.Interior.ColorIndex = 0
+
+
+' Filter out blanks from INTENT_LIST column
+    ActiveSheet.Range("$A$1:$I$45").AutoFilter Field:=INTENT_LIST, Criteria1:="<>[]", Operator:=xlFilterValues
+    
+' Filter remaining SuperDA data
+    ActiveSheet.Range("$A$1:$I$45").AutoFilter Field:=BOT_NAME, Criteria1:="<>SuperDA", Operator:=xlFilterValues
+        
+' Select and copy cleaned data
+    Set rng = ActiveSheet.UsedRange
+    Intersect(rng, rng.Offset(1)).Copy
+     
+    
+' Move to new Integrated sheet and paste to the end
+    Worksheets(3).Activate
+    ActiveSheet.Paste Destination:=Worksheets("Integrated").Range("A" & LR + 1)
+  
+    Range("S1").Select
+
+' Move to Menu sheet
+    Worksheets(4).Activate
+    
+    
+' 10. For cleaning menu driven data from the DA. ''''''''''''''''''''''''''''''''''''''''
+
+' Init vars
+    Set ws = Sheets("Menu Data")
+    count = ws.Cells(Rows.count, "A").End(xlUp).Row
+
+' Remove text wrapping
+    Cells.WrapText = False
+
+' Apply filters across header
+    Range("A1:M1").Select
+    Selection.AutoFilter
+   
+   
+' Utilize color filtering to mark out multiple conditions in USER_UTTERANCE
+i = 2
+
+Do While i <= count
+
+    If Cells(i, USER_UTTERANCE).Value <> "Greeting" _
+    And Cells(i, USER_UTTERANCE).Value <> "" _
+    And Cells(i, USER_UTTERANCE).Value <> "ask BirthRb InvokeMenuBirth" _
+    And Cells(i, USER_UTTERANCE).Value <> "negativeFeedback" _
+    And Cells(i, USER_UTTERANCE).Value <> "positiveFeedback" _
+    And Cells(i, USER_UTTERANCE).Value <> "ask DA-COVID, COVID" Then
+    
+    Cells(i, USER_UTTERANCE).Interior.Color = RGB(38, 201, 218)
+    
+    End If
+    
+    i = i + 1
+    
+Loop
+
+ws.Range("A1").AutoFilter Field:=USER_UTTERANCE, Criteria1:=RGB(38, 201, 218), Operator:=xlFilterCellColor
+
+ws.Cells.Interior.ColorIndex = 0
+   
+   
+' Filter COMPONENT_NAME
+    ActiveSheet.Range("$A$1:$M$85").AutoFilter Field:=COMPONENT_NAME, Criteria1:="System.CommonResponse", Criteria2:="System.Text", Operator:=xlOr
+   
+' Copy used range on active sheet
+    Set rng = ActiveSheet.UsedRange
+
+    Intersect(rng, rng.Offset(1)).Copy
+
+' add new sheet
+    Sheets.Add after:=ActiveSheet
+    ActiveSheet.Paste
+
+' Rename sheet to Menu
+    ActiveSheet.Name = "Menu"
+
+' Remove column E and then insert a replacement
+    Columns("E:E").Select
+    Selection.Delete Shift:=xlToLeft
+    Columns("E:E").Select
+    Selection.Insert Shift:=xlToRight, CopyOrigin:=xlFormatFromLeftOrAbove
+
+' Copy used range on active sheet
+    Set rng = ActiveSheet.UsedRange
+    Intersect(rng, rng).Copy
+
+' Move back to Integrated tab
+    Worksheets(3).Activate
+    
+' Init vars
+    Set ws = Sheets("Integrated")
+    count = ws.Cells(Rows.count, "A").End(xlUp).Row
+    
+' Init vars to count rows for Integrated sheet
+    LR = Cells(Rows.count, 1).End(xlUp).Row
+
+' Paste at the end of Integrated sheet
+    ActiveSheet.Paste Destination:=Worksheets("Integrated").Range("A" & LR + 1)
+
+' Remove unneeded columns
+    Columns("H:J").Select
+
+    Selection.Delete Shift:=xlToLeft
+
+' 11. Add in unresolvedIntents ''''''''''''''''''''''''''''''''''''''''
+
+' Make a second backup copy of sheet
+    Sheets("backupCopy").Select
+    Sheets("backupCopy").Copy after:=Sheets(5)
+
+' Rename sheet to backupCopy
+    ActiveSheet.Name = "unresolvedIntents"
+
+' 1a. Rename SuperDA to DAMISC '''''''''''''''''''''''''''''''''''''''''''''''''''
+
+    Columns("A:A").Select
+    
+    Selection.Replace What:="super*", Replacement:="DAMISC", lookat:=xlPart _
+        , SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False, FormulaVersion:=xlReplaceFormula2
+
+
+'    Sheets("unresolvedIntents").Activate
+    
+    ' Delete columns not needed
+    Columns("S:AE").Select
+    Selection.Delete Shift:=xlToLeft
+
+    Columns("O:Q").Select
+    Selection.Delete Shift:=xlToLeft
+
+    Columns("K:L").Select
+    Selection.Delete Shift:=xlToLeft
+
+    Columns("F:I").Select
+    Selection.Delete Shift:=xlToLeft
+
+    Columns("B:C").Select
+    Selection.Delete Shift:=xlToLeft
+
+' Remove text wrapping
+    Cells.WrapText = False
+    
+    
+' Add three new columns
+    Columns("C:C").Select
+    Selection.Insert Shift:=xlToRight, CopyOrigin:=xlFormatFromLeftOrAbove
+    Selection.Insert Shift:=xlToRight, CopyOrigin:=xlFormatFromLeftOrAbove
+''    Selection.Insert Shift:=xlToRight, CopyOrigin:=xlFormatFromLeftOrAbove
+     
+' Delimit TIMESTAMP by " " into 3 columns
+    Columns("B:B").Select
+    Selection.TextToColumns Destination:=Range("B1"), DataType:=xlDelimited, _
+        TextQualifier:=xlNone, ConsecutiveDelimiter:=True, Tab:=False, Semicolon _
+        :=False, Comma:=False, Space:=True, Other:=False, FieldInfo:=Array( _
+        Array(1, 4), Array(2, 1), Array(3, 1)), TrailingMinusNumbers:=True
+    
+    Range("$B$1").Value = "DATE"
+    Range("$C$1").Value = "TIME"
+    
+
+' Delete columns C and D
+    Columns("D").Select
+    Selection.Delete Shift:=xlToLeft
+
+' Resize date column to display properly
+    Columns("B:B").EntireColumn.AutoFit
+    Columns("C:C").EntireColumn.AutoFit
+    Columns("E:E").ColumnWidth = 20.71
+    
+
+' Filter for unresolvedIntent from INTENT
+    ActiveSheet.Range("$A$1:$I$45").AutoFilter Field:=8, Criteria1:="unresolvedIntent", Operator:=xlFilterValues
+   
+    Range("A1").Select
+     
+' Select and copy cleaned data
+'    Dim rng As Range
+    Set rng = ActiveSheet.UsedRange
+    Intersect(rng, rng.Offset(1)).Copy
+    
+'   Move back to Integrated sheet
+    Worksheets(3).Activate
+    
+' Set LR to count rows again and paste at the end
+    LR = Cells(Rows.count, 1).End(xlUp).Row
+    ActiveSheet.Paste Destination:=Worksheets("Integrated").Range("A" & LR + 1)
+    
+    
+    
+' 12. Sort, select and copy data ''''''''''''''''''''''''''''''''''''''
+
+' Sort by Date, UserID and then Time
+    With ActiveWorkbook.ActiveSheet.Sort
+        .SortFields.Clear
+        .SortFields.Add Key:=Range("B1"), Order:=xlAscending
+        .SortFields.Add Key:=Range("D1"), Order:=xlAscending
+        .SortFields.Add Key:=Range("C1"), Order:=xlAscending
+        .SetRange Range("A:L")
+        .Header = xlNo
+        .Apply
+    End With
+
+' Remove text wrapping
+    Cells.WrapText = False
+
+' Re-enable calculation after the macro has run.
+    Application.Calculation = xlAutomatic
+
+' Select and copy cleaned data
+    Set rng = ActiveSheet.UsedRange
+    Intersect(rng, rng).Copy
+    
+    
+End Sub
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Sub RandoGordo()
+'
+' RandoGordo Macro
+'
+ 
+' Used to automate daily reports that go to the international team for review.
+ 
+' Table of Contents
+' 1 - Auto remove Covid and Birth Skill intents
+' 2 - Take 10% randomized sample
+' 3 - Change INTENT LIST to be a pure CONFIDENCE score
+' 4 - Update certain values automatically based on well understood situations
+
+ 
+    ' set variables
+    Dim rowNum As Long
+    Dim topTenPercent As Long
+    Dim tbl As ListObject
+    Dim rng As Range
+    Dim cell As Range
+    Dim confidenceThreshold As Double
+    
+    ' set the confidence threshold
+    confidenceThreshold = 0.98
+    
+    ' Set reference to the table
+    Set tbl = ActiveWorkbook.Worksheets("Sheet1").ListObjects("Table1")
+    
+    
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'1.''''''''''''''''''''''''''''''''''''''''''''''''''''' Auto remove Covid and Birth Skill intents '''''''''''''''''''''''''''''''''''''''''''''''''''''
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+    
+    ' remove Covid and Birth skills from the data
+    Set rng = tbl.ListColumns("SKILL").DataBodyRange
+    For i = rng.count To 1 Step -1 ' Loop backwards since we're deleting rows
+        If rng.Cells(i, 1).Value = "DACOVID" Or rng.Cells(i, 1).Value = "DABIRTH" Then
+            rng.Cells(i, 1).EntireRow.Delete
+        End If
+    Next i
+    
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+    
+
+    
+    
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'2.'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''' Take 10% randomized sample '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+    ' create helper column for random number
+    Columns("I:I").Select
+    Selection.Insert Shift:=xlToRight, CopyOrigin:=xlFormatFromLeftOrAbove
+    
+    Range("I2").Select
+    ActiveCell.FormulaR1C1 = "=RAND()"
+    Range("I3").Select
+    Application.Calculation = xlManual 'turn calculation off
+    ActiveWorkbook.Worksheets("Sheet1").ListObjects("Table1").Sort.SortFields.Clear
+    ActiveWorkbook.Worksheets("Sheet1").ListObjects("Table1").Sort.SortFields.Add2 _
+        Key:=Range("Table1[[#All],[Column1]]"), SortOn:=xlSortOnValues, Order:= _
+        xlAscending, DataOption:=xlSortNormal
+    With ActiveWorkbook.Worksheets("Sheet1").ListObjects("Table1").Sort
+        .Header = xlYes
+        .MatchCase = False
+        .Orientation = xlTopToBottom
+        .SortMethod = xlPinYin
+        .Apply
+    End With
+    
+    ' delete used helper column
+    Columns("I:I").Select
+    Selection.Delete Shift:=xlToLeft
+    
+'    Application.Calculation = xlAutomatic 'turn calculation back on
+
+' take 10% percent of total data and delete the rest
+    ' Count the total number of rows
+    rowNum = tbl.ListRows.count
+    ' Calculate the top 10%
+    topTenPercent = Round(rowNum * 0.1)
+    ' Delete rows past the top 10%
+    If rowNum > topTenPercent Then
+        tbl.Range.Rows(topTenPercent + 1 & ":" & rowNum).Delete
+    End If
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'3.'''''''''''''''''''''''''''''''''''''''''''''''' Change INTENT LIST to be a pure CONFIDENCE score '''''''''''''''''''''''''''''''''''''''''''''''''''
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+' remove text from INTENT LIST column and leave only primary confidence score
+    ' start by removing the value after the "},{" and the first colon
+    Set rng = tbl.ListColumns("INTENT LIST").DataBodyRange
+    
+    For Each cell In rng
+        pos = InStr(cell.Value, "},{") ' Find the position of the characters "},{"
+        If pos > 0 Then ' If the characters were found
+            temp = Left(cell.Value, pos - 1) ' Keep only the text before the characters
+            firstColon = InStr(InStr(temp, ":"), temp, ":") ' Find the position of the second colon
+            If firstColon > 0 Then ' If the second colon was found
+                cell.Value = Mid(temp, firstColon + 1) ' Keep only the text after the second colon
+            End If
+        End If
+    Next cell
+           
+    ' remove the value after the second colon
+    For Each cell In rng
+        secondColon = InStr(cell.Value, ":") ' Find the position of the first colon
+        If secondColon > 0 Then ' If the first colon was found
+            cell.Value = Mid(cell.Value, secondColon + 1) ' Keep only the text after the first colon
+        End If
+    Next cell
+    
+    ' Rename the "INTENT LIST" column to "CONFIDENCE"
+    tbl.ListColumns("INTENT LIST").Name = "CONFIDENCE"
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'4.'''''''''''''''''''''''''''''''''''' Update certain values automatically based on well understood situations ''''''''''''''''''''''''''''''''''''''''
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+' for all instances where CONFIDENCE is greater than an assigned threshold set STATUS as "Bot Action Correct"
+    For i = 1 To tbl.ListRows.count
+        If tbl.DataBodyRange(i, tbl.ListColumns("CONFIDENCE").Index) >= confidenceThreshold Then
+            tbl.DataBodyRange(i, tbl.ListColumns("STATUS").Index) = "Bot Action Correct"
+        End If
+    Next i
+
+' for all instances where INTENT equals AgentInitation set STATUS as "Agent Transfer"
+    For i = 1 To tbl.ListRows.count
+        If tbl.DataBodyRange(i, tbl.ListColumns("INTENT").Index) = "AgentInitiation" Then
+            tbl.DataBodyRange(i, tbl.ListColumns("STATUS").Index) = "Agent Transfer"
+        End If
+    Next i
+
+' for all instances where INTENT equals unresolvedIntent set STATUS as "Incorrect"
+    For i = 1 To tbl.ListRows.count
+        If tbl.DataBodyRange(i, tbl.ListColumns("INTENT").Index) = "unresolvedIntent" Then
+            tbl.DataBodyRange(i, tbl.ListColumns("STATUS").Index) = "Incorrect"
+        End If
+    Next i
+    
+' for all instances where INTENT equals unresolvedIntent AND confidence score >= .75, set STATUS as "Monitor" and set NOTES as "known issue - double ask"
+' the confidence score to resolve an intent is .75, so any that are unresolved but .75 or higher are caused by the client asking for the same intent twice
+    For i = 1 To tbl.ListRows.count
+        If tbl.DataBodyRange(i, tbl.ListColumns("INTENT").Index) = "unresolvedIntent" And tbl.DataBodyRange(i, tbl.ListColumns("CONFIDENCE").Index) >= 0.75 Then
+            tbl.DataBodyRange(i, tbl.ListColumns("STATUS").Index) = "Monitor"
+            tbl.DataBodyRange(i, tbl.ListColumns("NOTES").Index) = "known issue - double ask"
+        End If
+    Next i
+    
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+Application.Calculation = xlAutomatic 'turn calculation back on
+
+End Sub
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Sub xRemoveTestingData()
+'
+' xDevTest Macro
+'
+
+''''''''''''''''''''''''''' Remove unnecessary button clicks '''''''''''''''''''''''''''
+Dim ws As Worksheet
+Dim count, i As Long
+Dim INTENT
+
+INTENT = 18
+
+Set ws = ActiveSheet
+
+' Set i to start on line 2.
+count = ws.Cells(Rows.count, "A").End(xlUp).Row
+i = 2
+
+' Loop and paint all intents needing to be deleted a particular color.
+Do While i <= count
+
+    If Cells(i, INTENT).Value = "Greeting" _
+    Or Cells(i, INTENT).Value = "ExitFlow" _
+    Or Cells(i, INTENT).Value = "InvocationJA" _
+    Or Cells(i, INTENT).Value = "InvocationPolicy" _
+    Or Cells(i, INTENT).Value = "Introduction" _
+    Or Cells(i, INTENT).Value = "IcanHelpMenu" _
+    Or Cells(i, INTENT).Value = "PayrollIntroduction" _
+    Or Cells(i, INTENT).Value = "EmployeeOptionsAP" _
+    Or Cells(i, INTENT).Value = "Other Topics" _
+    Or Cells(i, INTENT).Value = "fdbck_didntAnswer" _
+    Or Cells(i, INTENT).Value = "fdbck_other" _
+    Or Cells(i, INTENT).Value = "fdbck_answerConfusing" _
+    Or Cells(i, INTENT).Value = "fdbck_notUserFriendly" _
+    Or Cells(i, INTENT).Value = "fdbck_thumbsDown" _
+    Or Cells(i, INTENT).Value = "fdbck_thumbsUp" _
+    Or Cells(i, INTENT).Value = "SupervisorAttendance" _
+    Or Cells(i, INTENT).Value = "SupervisorCompensation" _
+    Or Cells(i, INTENT).Value = "SupervisorJA" _
+    Or Cells(i, INTENT).Value = "SupervisorPayroll" _
+    Or Cells(i, INTENT).Value = "SupervisorPolicy" _
+    Or Cells(i, INTENT).Value = "SupervisorRole" _
+    Or Cells(i, INTENT).Value = "InvocationFMLA" Then
+    
+    Cells(i, INTENT).Interior.Color = RGB(38, 201, 218)
+    
+    End If
+    
+    i = i + 1
+    
+Loop
+
+ws.Range("A1").AutoFilter Field:=INTENT, Criteria1:=RGB(38, 201, 218), Operator:=xlFilterCellColor
+
+'ws.Cells.Interior.ColorIndex = 0
+
+' Delete the visible rows with the specified color
+On Error Resume Next ' If no cells, continues to process
+ws.Range("A2:A" & count).SpecialCells(xlCellTypeVisible).EntireRow.Delete
+On Error GoTo 0
+
+' Turn off the filter and show all rows
+ws.AutoFilterMode = False
+
+
+
+''''''''''''''''''''''''' Update UIDs '''''''''''''''''''''''''''
+
+' Temporarily disable automatic calculation so the macro runs quicker.
+Application.Calculation = xlManual
+
+' Clear any active filters
+    ActiveSheet.AutoFilterMode = False
+
+' Sort by UserID and then Timestamp
+    With ActiveWorkbook.ActiveSheet.Sort
+        .SortFields.Clear
+        .SortFields.Add Key:=Range("F1"), Order:=xlAscending
+        .SortFields.Add Key:=Range("D1"), Order:=xlAscending
+        .SetRange Range("A:AF")
+        .Header = xlYes
+        .Apply
+    End With
+
+' Init vars
+    Dim realUID, systemUID
+    Dim splitterArray() As String
+    Dim rngA, rngB As Range
+    
+    Set ws = ActiveSheet
+    count = ws.Cells(Rows.count, "A").End(xlUp).Row
+    i = 2
+
+' Loop for NLP feedback
+Do While i <= count
+    
+    If InStr(1, Cells(i, 5).Value, "user") > 0 And _
+        InStr(1, Cells(i, 14).Value, "<span hidden id='uid'>") > 0 Then
+            systemUID = Cells(i, 5).Value
+'            realUID = Left(Right(Cells(i, 14).Value, 13), 6)
+            splitterArray = Split(Cells(i, 14), ">", 2)
+            realUID = Left(splitterArray(1), 6)
+                        
+            Columns("E:E").Select
+            Selection.Replace What:=systemUID, Replacement:=realUID, lookat:=xlPart _
+            , SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+            ReplaceFormat:=False, FormulaVersion:=xlReplaceFormula2
+        
+    End If
+         
+    i = i + 1
+        
+Loop
+
+'''''''''''''''''''''''''''''' Clear testing data '''''''''''''''''''''''''''''''
+
+' Set vars
+    Set ws = Sheets(1)
+    count = ws.Cells(Rows.count, "A").End(xlUp).Row
+
+'
+    Rows("1:1").Select
+    Selection.AutoFilter
+
+
+' Filter for team UIDs
+    ActiveSheet.Range("$A$1:$AE$1").AutoFilter Field:=5, Criteria1:=Array(list of UIDS), _
+        Operator:=xlFilterValues
+    
+' Delete rows displaying our UIDs
+    ActiveSheet.AutoFilter.Range.Offset(1, 0).Rows.SpecialCells(xlCellTypeVisible).Delete (xlShiftUp)
+
+' Clear filter after delete
+    On Error Resume Next
+    ActiveSheet.ShowAllData
+    
+' Filter for any data from the test environment
+    ActiveSheet.Range("$A$1:$AE$1").AutoFilter Field:=12, Criteria1:="test", Operator:=xlFilterValues
+    
+' Delete rows displaying our UIDs
+    ActiveSheet.AutoFilter.Range.Offset(1, 0).Rows.SpecialCells(xlCellTypeVisible).Delete (xlShiftUp)
+
+' Clear filter after delete
+    On Error Resume Next
+    ActiveSheet.ShowAllData
+    
+' Rename sheet to SuperDA_Data
+    ActiveSheet.Name = "SuperDA_Data"
+    
+' Re-enable calculation after the macro has run.
+Application.Calculation = xlAutomatic
+    
+End Sub
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Sub toggleAutocalculate()
+'
+' toggleAutocalculate Macro
+'
+ActiveWorkbook.PrecisionAsDisplayed = False
+
+With Application
+    If .Calculation = xlCalculationManual Then
+    .Calculation = xlCalculationAutomatic
+Else
+    .Calculation = xlCalculationManual
+    .MaxChange = 0.001
+End If
+End With
+
+End Sub
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Sub xUncheckBoxes()
+'
+' xUncheckBoxes Macro
+'
+    Dim chkBox As Excel.CheckBox
+    Application.ScreenUpdating = False
+    For Each chkBox In ActiveSheet.CheckBoxes
+            chkBox.Value = xlOff
+    Next chkBox
+    Application.ScreenUpdating = True
+
+End Sub
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Sub utterUtterance()
+'
+' Utter Utterance Macro
+'
+' This macro is designed to first locate the first row in the Intents file that corresponds with the Intent Name selected in the backLog.
+' Once that is determined the corresponding value in the Utterance row of the backLog will automatically paste in the Intents file.
+'
+
+' pause screen updating and calculations
+Application.ScreenUpdating = False
+Application.Calculation = xlCalculationManual
+
+' Initialize variables
+Dim utteranceText As String
+Dim lines As Variant
+Dim utteranceSourceCell As Range
+Dim intentSourceCell As Range
+Dim pastingCell As Range
+Dim TargetCell As Range
+Dim targetWorkbook As Workbook
+Dim targetWorksheet As Worksheet
+Dim matchingRow As Long
+Dim cellValue As String
+Dim prefix As String
+
+
+' Check if the active sheet is "Backlog", if not exit sub to avoid any issues.
+    If ActiveSheet.Name <> "Backlog" Then
+        ' Exit the subroutine if the active sheet is not "Backlog"
+        MsgBox "utterUtterance triggered off the Backlog, exiting the subroutine."
+        Exit Sub
+    End If
+
+
+' Set references to the target workbook, active cell and worksheet
+Set targetWorkbook = Workbooks("SuperDA Backlog.xlsm")
+
+' capture active cell as a range
+Set intentSourceCell = ActiveCell
+cellValue = intentSourceCell.Value
+
+    ' Check if the cell value contains "_"
+    If InStr(cellValue, "_") > 0 Then
+        ' Get the prefix
+        prefix = Left(cellValue, InStr(cellValue, "_") - 1)
+        
+        ' Convert the prefix to lowercase
+        prefix = LCase(prefix)
+        
+        ' Check the prefix and do something
+        Select Case prefix
+            Case "fmla"
+                ' Do something for "fmla"
+                Set targetWorksheet = ActiveWorkbook.Worksheets("FMLA_Intents")
+                ' clear filters from target table
+                On Error Resume Next
+                    ActiveSheet.ListObjects("fmlaIntents").AutoFilter.ShowAllData
+                On Error GoTo 0
+                
+                
+            Case "ja"
+                ' Do something for "ja"
+                Set targetWorksheet = ActiveWorkbook.Worksheets("JA_Intents")
+                
+            Case "policy"
+                ' Do something for "policy"
+                Set targetWorksheet = ActiveWorkbook.Worksheets("Policy_Intents")
+                
+            Case "payroll"
+                ' Do something for "payroll"
+                Set targetWorksheet = ActiveWorkbook.Worksheets("Payroll_Intents")
+                
+            Case "misc"
+                ' Do something for "Misc"
+                Set targetWorksheet = ActiveWorkbook.Worksheets("Misc_Intents")
+                
+            Case "ap"
+                ' Do something for "Misc"
+                Set targetWorksheet = ActiveWorkbook.Worksheets("AP_Intents")
+                
+            Case Else
+                ' Do something else if the prefix is not one of the above
+                MsgBox "Skill was not found."
+            ' Exit the subroutine
+        Exit Sub
+        End Select
+    Else
+        ' Do something if the cell value does not contain "_"
+        MsgBox "Skill not found. Cell value does not contain _"
+        ' Exit the subroutine
+        Exit Sub
+    End If
+    
+
+
+' Set targetWorksheet = targetWorkbook.ActiveSheet
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+' Locate the first row of a given intent name in the current active sheet on the intents file
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+
+' grab row number of that corresponds with the intent name in the active cell
+On Error Resume Next ' In case no match is found
+    matchingRow = Application.WorksheetFunction.match(intentSourceCell.Value, targetWorksheet.Range("B:B"), 0)
+    On Error GoTo 0 ' Reset error handling
+
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+
+' Set utteranceText as the cell to the left of the intentSourceCell
+Set utteranceSourceCell = intentSourceCell.Offset(0, -1)
+    utteranceText = utteranceSourceCell.Value
+
+' Calculate the number of lines in the active cell's value and display it in a message box
+    lines = Split(utteranceText, vbLf)
+    linesCount = UBound(lines) - LBound(lines) + 1
+'    MsgBox (linesCount) ' for diagnostic purposes
+    
+
+' Prompt the user to enter the target cell location
+Dim cellLocation As Range
+Dim userInput As String
+On Error Resume Next
+    'userInput = InputBox("Please enter the row number:", "Row Number")
+    userInput = matchingRow + 1
+    If userInput = "" Then Exit Sub
+    Set cellLocation = Range("A" & userInput)
+    On Error GoTo 0
+    
+' Validate the entered cell location and display a message if it's invalid
+If cellLocation Is Nothing Then
+    MsgBox "Invalid cell location. Please try again.", vbExclamation
+    Exit Sub
+End If
+
+' Set the target cell and insert new rows based on the number of lines in the active cell's value
+Set TargetCell = targetWorksheet.Range(cellLocation.Address)
+TargetCell.Resize(linesCount).EntireRow.Insert
+
+Set pastingCell = targetWorksheet.Range(cellLocation.Address)
+
+' Inform the user of the selected cell location
+' MsgBox "Pasting text in the following cell: " & pastingCell.Address, vbInformation ' for diagnostic purposes
+
+' Paste each line into a separate cell
+For i = 0 To linesCount - 1
+    pastingCell.Offset(i, 0).Value = lines(i)
+Next i
+
+' Move the cursor to the pasting cell location
+    Application.ScreenUpdating = False
+    targetWorkbook.Activate
+    targetWorksheet.Activate
+
+' Use Goto to select and navigate to the cell
+    Application.Goto Reference:=targetWorksheet.Range(cellLocation.Offset(-3, 0).Address), Scroll:=True
+
+    Application.ScreenUpdating = True  ' Turn on screen updating
+
+' restore screen updating and calculations
+Application.ScreenUpdating = True
+Application.Calculation = xlCalculationAutomatic
+    
+End Sub
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Sub addNewEntry()
+'
+' addNewEntry Macro
+'
+
+'
+' define vars
+    Dim utter1, intent1, convers1, answer1
+    Dim autoConvers, autoAnswer, chkValid
+    Dim dateToday
+    dateToday = Date
+
+' check to see if the checkIntent check box is selected
+'If Range("D7").Value = True Then
+'chkValid = Application.WorksheetFunction.VLookup(Range("D6"), Range("Intents!C:E"), 3, False)
+
+
+' wrap rest of functionality in if statement based on if it is valid or not
+'If IsNull(chkValid) = False Then
+
+' pull conversation name and store as autoConvers
+    If Range("E6").Value = "x" Then
+        autoConvers = Application.WorksheetFunction.VLookup(Range("D6"), Range("Intents!C:E"), 2, False)
+        Range("E6").Value = autoConvers
+    End If
+
+    
+' pull answer and store as autoAnswer
+    If Range("F6").Value = "x" Then
+        autoAnswer = Application.WorksheetFunction.VLookup(Range("D6"), Range("Intents!C:E"), 3, False)
+        Range("F6").Value = autoAnswer
+        Range("F6").WrapText = False
+    End If
+    
+' grab cell contents from entry point
+    utter1 = Range("C6").Value
+    intent1 = Range("D6").Value
+    convers1 = Range("E6").Value
+    answer1 = Range("F6").Value
+
+' insert new row below table header
+    Rows(11).Select
+    Selection.Insert Shift:=xlDown, CopyOrigin:=xlFormatFromRightOrBelow
+
+' paste grabbed information from entry point into new row
+    Range("C11").Value = utter1
+    Range("D11").Value = intent1
+    Range("E11").Value = convers1
+    Range("F11").Value = answer1
+
+' auto populate date added
+    Range("A11").Value = dateToday
+
+' auto populate Status column to show pending
+    Range("H11").Value = "| Pending"
+    
+' auto populate Reason column to show blank
+    Range("G11").Value = "| "
+    
+' reset entry point for next item
+    Range("C6").ClearContents
+    Range("D6").ClearContents
+    Range("E6").ClearContents
+    Range("F6").ClearContents
+
+' turn off word wrapping on answer column
+    Range("F11").WrapText = False
+
+        
+'Else
+'    MsgBox ("Invalid Intent Name")
+'    End If
+        
+'    End If
+
+End Sub
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+Sub refreshStatusSort()
+'
+' refreshStatusSort Macro - Backlog Status column sort function
+'
+
+'
+    ActiveWorkbook.Worksheets("Backlog").ListObjects("backlogData").Sort.SortFields _
+        .Clear
+    ActiveWorkbook.Worksheets("Backlog").ListObjects("backlogData").Sort.SortFields _
+        .Add2 Key:=Range("backlogData[Status]"), SortOn:=xlSortOnValues, Order:= _
+        xlAscending, CustomOrder:= _
+        "|- URGENT (notes),| In Progress,| Pending,| w/ SME for Content,| w/ SME for Review,| Completed,| Uploaded,|- Tabled (notes),| Verified Live" _
+        , DataOption:=xlSortNormal
+    With ActiveWorkbook.Worksheets("Backlog").ListObjects("backlogData").Sort
+        .Header = xlYes
+        .MatchCase = False
+        .Orientation = xlTopToBottom
+        .SortMethod = xlPinYin
+        .Apply
+    End With
+    
+    SendKeys "{F9}"
+    
+    Application.Wait (Now + TimeValue("0:00:03"))
+    
+    SendKeys "{NUMLOCK}", True
+    
+End Sub
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Sub deflectionRateClean()
+'
+' deflectionRateClean Macro
+'
+' Keyboard Shortcut: Ctrl+d
+'
+
+' Delete unneeded columns
+    Columns("R:AE").Select
+    Selection.Delete Shift:=xlToLeft
+
+    Columns("F:P").Select
+    Selection.Delete Shift:=xlToLeft
+
+    Columns("B:C").Select
+    Selection.Delete Shift:=xlToLeft
+     
+' Insert two new columns for process to break up time and date
+    Columns("C:C").Select
+    Selection.Insert Shift:=xlToRight, CopyOrigin:=xlFormatFromLeftOrAbove
+    Selection.Insert Shift:=xlToRight, CopyOrigin:=xlFormatFromLeftOrAbove
+    
+' Change timestamp to date and then also time
+    Columns("B:B").Select
+    Selection.TextToColumns Destination:=Range("B1"), DataType:=xlDelimited, _
+        TextQualifier:=xlNone, ConsecutiveDelimiter:=True, Tab:=False, Semicolon _
+        :=False, Comma:=False, Space:=True, Other:=False, FieldInfo:=Array( _
+        Array(1, 1), Array(2, 1), Array(3, 1)), TrailingMinusNumbers:=True
+    
+' Delete extraneous column
+    Columns("D").Select
+    Selection.Delete Shift:=xlToLeft
+    
+' Rename column to "TIME"
+    Range("C1").Select
+    ActiveCell.FormulaR1C1 = "TIME"
+    Range("C2").Select
+    
+' Filter for "agentConversation"
+    ActiveSheet.Range("$A$1:$E$964").AutoFilter Field:=5, Criteria1:="agentConversation", Operator:=xlFilterValues
+    
+' Copy used range on active sheet including header
+    Dim rng
+
+    Set rng = ActiveSheet.UsedRange
+
+    Intersect(rng, rng).Copy
+    
+' add new sheet
+    Sheets.Add after:=ActiveSheet
+    ActiveSheet.Paste
+    
+' Rename sheet to Deflection
+    ActiveSheet.Name = "Deflection"
+    
+' set vars
+    Dim RowCount As Integer
+    
+' get count of rows
+    RowCount = ActiveSheet.UsedRange.Rows.count
+
+' create pivot table from data on Deflection sheet
+    Application.CutCopyMode = False
+    ActiveWorkbook.PivotCaches.Create(SourceType:=xlDatabase, SourceData:= _
+        "Deflection!R1C1:R" & RowCount & "C5", Version:=6).CreatePivotTable TableDestination:= _
+        "Deflection!R2C10", TableName:="DeflectionTable1", DefaultVersion:=6
+    Sheets("Deflection").Select
+    Cells(2, 10).Select
+    With ActiveSheet.PivotTables("DeflectionTable1")
+        .ColumnGrand = True
+        .HasAutoFormat = True
+        .DisplayErrorString = False
+        .DisplayNullString = True
+        .EnableDrilldown = True
+        .ErrorString = ""
+        .MergeLabels = False
+        .NullString = ""
+        .PageFieldOrder = 2
+        .PageFieldWrapCount = 0
+        .PreserveFormatting = True
+        .RowGrand = True
+        .SaveData = True
+        .PrintTitles = False
+        .RepeatItemsOnEachPrintedPage = True
+        .TotalsAnnotation = False
+        .CompactRowIndent = 1
+        .InGridDropZones = False
+        .DisplayFieldCaptions = True
+        .DisplayMemberPropertyTooltips = False
+        .DisplayContextTooltips = True
+        .ShowDrillIndicators = True
+        .PrintDrillIndicators = False
+        .AllowMultipleFilters = False
+        .SortUsingCustomLists = True
+        .FieldListSortAscending = False
+        .ShowValuesRow = False
+        .CalculatedMembersInFilters = False
+        .RowAxisLayout xlCompactRow
+    End With
+    With ActiveSheet.PivotTables("DeflectionTable1").PivotCache
+        .RefreshOnFileOpen = False
+        .MissingItemsLimit = xlMissingItemsDefault
+    End With
+    ActiveSheet.PivotTables("DeflectionTable1").RepeatAllLabels xlRepeatLabels
+    With ActiveSheet.PivotTables("DeflectionTable1").PivotFields("BOT_NAME")
+        .Orientation = xlRowField
+        .Position = 1
+    End With
+    ActiveSheet.PivotTables("DeflectionTable1").AddDataField ActiveSheet.PivotTables( _
+        "DeflectionTable1").PivotFields("NEXT_STATE"), "Count of NEXT_STATE", xlCount
+    
+' Copy pertinent information
+    Range("K3:K8").Select
+    Selection.Copy
+
+    
+End Sub
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Sub xFeedbackGrabber()
+'
+' xFeedbackGrabber Macro
+'
+' Keyboard Shortcut: Ctrl+Shift+F
+'
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+''''''''''''' For grabbing feedback from the raw data ''''''''''''''''
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+' Temporarily disable automatic calculation so the macro runs quicker.
+Application.Calculation = xlManual
+
+' Copy backupsheet
+    Sheets("backupCopy").Select
+    Sheets("backupCopy").Copy before:=Sheets(1)
+    
+' Rename sheet to backupCopy
+    ActiveSheet.Name = "feedbackCopy"
+
+' Init vars
+    Dim count, i, j As Long
+    Dim ws As Worksheet
+    Dim response1, user1, date1, time1, filterVar
+    Dim copyRange As String
+
+    Set ws = ActiveSheet
+    count = ws.Cells(Rows.count, "A").End(xlUp).Row
+    definedRows = ws.Cells(Rows.count, "A").End(xlUp).Row
+
+' Clear any active filters before proceeding
+    ActiveSheet.AutoFilterMode = False
+
+' Make a copy of the sheet
+'    Worksheets("SuperDA_Data").Copy After:=Worksheets("SuperDA_Data")
+
+'''''''''''''''''''''''''' Setup Loop to Remove Agent Data ''''''''''''''''''''''''''''''
+
+' Filter column L for 'serviceCloud' and copy UID's from column B to a new sheet
+    ActiveSheet.Range("L:L").AutoFilter Field:=1, Criteria1:="serviceCloud", Operator:=xlFilterValues
+
+' Copy used range on active sheet
+    Set rng = ActiveSheet.UsedRange
+    Intersect(rng, rng.Offset(1)).Copy
+
+' Paste onto new sheet, rename sheet
+    Sheets.Add after:=ActiveSheet
+    ActiveSheet.Paste
+    ActiveSheet.Name = "UIDs"
+
+' Delete columns not needed
+    Columns("F:AE").Select
+    Selection.Delete Shift:=xlToLeft
+    Columns("A:D").Select
+    Selection.Delete Shift:=xlToLeft
+
+' Reset values
+    Set ws = ActiveSheet
+    count = ws.Cells(Rows.count, "A").End(xlUp).Row
+    i = 1
+
+
+' While still in range
+Do While i <= count
+
+    ' assign filterVar to cell
+    Set filterVar = ActiveSheet.Cells(i, 1)
+    
+    ' Move back to first sheet
+    Worksheets(1).Activate
+    
+    ' Clear any active filters before proceeding
+    ActiveSheet.AutoFilterMode = False
+    
+    ' Filter by FilterVar
+    ActiveSheet.Range("$A$1:$AE$1").AutoFilter Field:=5, Criteria1:=filterVar.Value, Operator:=xlFilterValues
+    
+    ' Select and delete filtered data
+    ActiveSheet.Range("$A$2:$AE$30000").SpecialCells _
+        (xlCellTypeVisible).EntireRow.Delete
+    
+    ' Clear any active filters before proceeding
+    ActiveSheet.AutoFilterMode = False
+    
+' Move back to second sheet
+    Worksheets(2).Activate
+    
+    i = i + 1
+    
+Loop
+
+' Move back to first sheet
+    Worksheets(1).Activate
+
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+
+' Delete columns not needed
+    Columns("S:AE").Select
+    Selection.Delete Shift:=xlToLeft
+
+    Columns("O:Q").Select
+    Selection.Delete Shift:=xlToLeft
+
+    Columns("K:L").Select
+    Selection.Delete Shift:=xlToLeft
+
+    Columns("F:I").Select
+    Selection.Delete Shift:=xlToLeft
+
+    Columns("A:C").Select
+    Selection.Delete Shift:=xlToLeft
+
+' Remove text wrapping
+    Cells.WrapText = False
+    
+    
+' Add two new columns
+    Columns("B:B").Select
+    Selection.Insert Shift:=xlToRight, CopyOrigin:=xlFormatFromLeftOrAbove
+    Selection.Insert Shift:=xlToRight, CopyOrigin:=xlFormatFromLeftOrAbove
+     
+' Delimit TIMESTAMP by " " into 3 columns
+    Columns("A:A").Select
+    Selection.TextToColumns Destination:=Range("A1"), DataType:=xlDelimited, _
+        TextQualifier:=xlNone, ConsecutiveDelimiter:=True, Tab:=False, Semicolon _
+        :=False, Comma:=False, Space:=True, Other:=False, FieldInfo:=Array( _
+        Array(1, 4), Array(2, 1), Array(3, 1)), TrailingMinusNumbers:=True
+    
+    Range("$A$1").Value = "DATE"
+    Range("$B$1").Value = "TIME"
+    
+ 
+' Delete columns C
+    Columns("C").Select
+    Selection.Delete Shift:=xlToLeft
+
+' Sort by Date, UserID and then Time
+    With ActiveWorkbook.ActiveSheet.Sort
+        .SortFields.Clear
+        .SortFields.Add Key:=Range("A1"), Order:=xlAscending
+        .SortFields.Add Key:=Range("C1"), Order:=xlAscending
+        .SortFields.Add Key:=Range("B1"), Order:=xlAscending
+        .SetRange Range("A:G")
+        .Header = xlNo
+        .Apply
+    End With
+  
+    Range("S1").Select
+
+' Resize date column to display properly
+    Columns("A:A").EntireColumn.AutoFit
+    Columns("B:B").EntireColumn.AutoFit
+    Columns("C:C").ColumnWidth = 10
+    Columns("D:D").ColumnWidth = 4
+    Columns("E:E").ColumnWidth = 40
+    Columns("F:F").ColumnWidth = 40
+    
+' Filter for 'Thanks again, have a great day. Please hold..'
+    ActiveWindow.SmallScroll Down:=-36
+
+    Range("A1:G1").Select
+
+    Selection.AutoFilter
+        
+    ActiveSheet.Range("$A$1:$H$45").AutoFilter Field:=6, Criteria1:="Thanks again, have a great day. Please hold..", Operator:=xlOr, Criteria2:="Before you go, was I helpful today?"
+
+
+
+' Filter out blanks from COMPONENT_NAME column
+    ActiveSheet.Range("$A$1:$F$45").AutoFilter Field:=5, Criteria1:="<>", Operator:=xlFilterValues
+     
+    Range("A1").Select
+    
+    
+' Select and copy cleaned data
+    Set rng = ActiveSheet.UsedRange
+    Intersect(rng, rng.Offset(1)).Copy
+    
+
+' add new sheet
+    Sheets.Add after:=ActiveSheet
+    ActiveSheet.Paste
+    
+' Rename sheet to Throw
+    ActiveSheet.Name = "Throw"
+    
+' Delete column E
+    Columns("F").Select
+    Selection.Delete Shift:=xlToLeft
+    
+' Select and copy cleaned data
+    Dim rng3 As Range
+    Set rng3 = ActiveSheet.UsedRange
+    Intersect(rng3, rng3).Copy
+    
+' add new sheet
+    Sheets.Add after:=ActiveSheet
+    ActiveSheet.Paste
+    
+' Rename sheet to Feedback
+    ActiveSheet.Name = "Feedback"
+    
+' Delete now unneeded Throw sheet
+    Application.DisplayAlerts = False
+        Sheets("Throw").Delete
+    Application.DisplayAlerts = True
+
+' <----- Move back to SuperDA_Data sheet
+    Worksheets(1).Activate
+    
+' Clear any active filters again
+    ActiveSheet.AutoFilterMode = False
+    
+
+' Loop to pull data
+i = 2
+j = 2
+Set ws = ActiveSheet
+count = ws.Cells(Rows.count, "A").End(xlUp).Row
+
+Do While i <= count
+
+    If Cells(i, 6).Value = "Before you go, was I helpful today?" Then
+        
+        If Cells(i, 3).Value = Cells(i, 3).Offset(1, 0).Value Then
+            date1 = Cells(i, 1).Value
+            time1 = Cells(i, 2).Value
+            user1 = Cells(i, 3).Value
+            response1 = Cells(i, 6).Offset(1, -1).Value
+            
+    
+            Cells(j, 10).Value = date1
+            Cells(j, 11).Value = time1
+            Cells(j, 12).Value = user1
+            Cells(j, 13).Value = response1
+            
+            j = j + 1
+        End If
+    
+    End If
+    
+    i = i + 1
+    
+Loop
+
+Let copyRange = "J2" & ":" & "M" & j
+
+Range(copyRange).Copy
+
+' Move to new Integrated sheet and paste to the end
+    Worksheets(2).Activate
+    
+' Init vars to count rows for Feedback sheet
+    Dim LR As Long
+    LR = Cells(Rows.count, 1).End(xlUp).Row
+
+' Paste at the end of Feedback sheet
+    ActiveSheet.Paste Destination:=Worksheets("Feedback").Range("A" & LR + 1)
+    
+' Sort by Date, UserID and then Time
+    With ActiveWorkbook.ActiveSheet.Sort
+        .SortFields.Clear
+        .SortFields.Add Key:=Range("A1"), Order:=xlAscending
+        .SortFields.Add Key:=Range("C1"), Order:=xlAscending
+        .SortFields.Add Key:=Range("B1"), Order:=xlAscending
+        .SetRange Range("A:H")
+        .Header = xlNo
+        .Apply
+    End With
+    
+' Select and copy cleaned data
+    Dim rng4 As Range
+    Set rng4 = ActiveSheet.UsedRange
+    Intersect(rng4, rng4).Copy
+    
+' Re-enable calculation after the macro has run.
+Application.Calculation = xlAutomatic
+    
+End Sub
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+Sub FixResponse()
+'
+' FixResponse Macro
+'
+
+'
+
+' Clear any active filters
+    ActiveSheet.AutoFilterMode = False
+
+' Sort by UserID and then Timestamp
+    With ActiveWorkbook.ActiveSheet.Sort
+        .SortFields.Clear
+        .SortFields.Add Key:=Range("C1"), Order:=xlAscending
+        .SortFields.Add Key:=Range("B1"), Order:=xlAscending
+        .SetRange Range("A:AF")
+        .Header = xlYes
+        .Apply
+    End With
+    
+' Init vars
+    Dim count, i As Long
+    Dim ws As Worksheet
+    Dim cellHolder
+
+    Set ws = ActiveSheet
+    count = ws.Cells(Rows.count, "A").End(xlUp).Row
+    i = 2
+
+' Loop for NLP feedback
+Do While i <= count
+    
+    If Cells(i, 10).Value <> "[]" Then ' If cell shows an intent list...
+              
+        If Cells(i, 10).Offset(1, 4).Value <> "" Then
+            'MsgBox ("At line " & i & " there is a response 1 line down")
+            cellHolder = Cells(i, 10).Offset(1, 4).Value
+            Cells(i, 10).Offset(0, 4).Value = cellHolder
+        
+        ElseIf Cells(i, 10).Offset(2, 4).Value <> "" Then
+            'MsgBox ("At line " & i & " there is a response 2 lines down")
+            cellHolder = Cells(i, 10).Offset(2, 4).Value
+            Cells(i, 10).Offset(0, 4).Value = cellHolder
+        
+        ElseIf Cells(i, 10).Offset(3, 4).Value <> "" Then
+            'MsgBox ("At line " & i & " there is a response 3 lines down")
+            cellHolder = Cells(i, 10).Offset(3, 4).Value
+            Cells(i, 10).Offset(0, 4).Value = cellHolder
+            
+        ElseIf Cells(i, 10).Offset(4, 4).Value <> "" Then
+            'MsgBox ("At line " & i & " there is a response 4 lines down")
+            cellHolder = Cells(i, 10).Offset(4, 4).Value
+            Cells(i, 10).Offset(0, 4).Value = cellHolder
+            
+        End If
+
+    End If
+
+    i = i + 1
+        
+Loop
+
+End Sub
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Sub xThumbs()
+'
+' xThumbs Macro
+'
+' Keyboard Shortcut: Ctrl+x
+'
+
+' Clear any active filters
+    ActiveSheet.AutoFilterMode = False
+
+' Name column AB:AB to hold thumbs up/down
+    Range("$AF$1").Value = "Thumbs"
+
+' Sort by UserID and then Timestamp
+    With ActiveWorkbook.ActiveSheet.Sort
+        .SortFields.Clear
+        .SortFields.Add Key:=Range("C1"), Order:=xlAscending
+        .SortFields.Add Key:=Range("B1"), Order:=xlAscending
+        .SetRange Range("A:AF")
+        .Header = xlYes
+        .Apply
+    End With
+
+
+
+' Filter out blanks from COMPONENT_NAME column
+'    ActiveSheet.Range("$A$1:$AF$45").AutoFilter Field:=15, Criteria1:="" ', Operator:=xlFilterValues
+
+' Select and delete filtered data
+'    Set rng = ActiveSheet.UsedRange
+'    Intersect(rng, rng).Offset(1, 0).Delete
+
+' Clear any active filters again
+'    ActiveSheet.AutoFilterMode = False
+
+
+' Init vars
+    Dim count, i As Long
+    Dim ws As Worksheet
+    Dim feedbackUID
+
+    Set ws = ActiveSheet
+    count = ws.Cells(Rows.count, "A").End(xlUp).Row
+    i = 2
+
+' Loop for NLP feedback
+Do While i <= count
+    
+    If Cells(i, 13).Value = "negativeFeedback" And Cells(i, 15).Value = "System.CommonResponse" Or _
+        Cells(i, 13).Value = "positiveFeedback" And Cells(i, 15).Value = "System.CommonResponse" Then
+        
+        feedbackUID = Cells(i, 5).Value
+        
+        ' If UID is still equal to the same UID check to make sure has a question and answer and also System.Intent
+        If Cells(i, 5).Offset(-1, 0).Value = feedbackUID And _
+            Cells(i, 13).Offset(-1, 0).Value <> "" And Cells(i, 14).Offset(-1, 0).Value <> "" And _
+            Cells(i, 15).Offset(-1, 0).Value = "System.Intent" Then
+            
+            Cells(i, 32).Offset(-1, 0).Value = Cells(i, 13).Value
+
+        ElseIf Cells(i, 5).Offset(-2, 0).Value = feedbackUID And _
+            Cells(i, 13).Offset(-2, 0).Value <> "" And Cells(i, 14).Offset(-2, 0).Value <> "" And _
+            Cells(i, 15).Offset(-2, 0).Value = "System.Intent" Then
+        
+            Cells(i, 32).Offset(-2, 0).Value = Cells(i, 13).Value
+        
+        ElseIf Cells(i, 5).Offset(-3, 0).Value = feedbackUID And _
+            Cells(i, 13).Offset(-3, 0).Value <> "" And Cells(i, 14).Offset(-3, 0).Value <> "" And _
+            Cells(i, 15).Offset(-3, 0).Value = "System.Intent" Then
+            
+            Cells(i, 32).Offset(-3, 0).Value = Cells(i, 13).Value
+        
+        ElseIf Cells(i, 5).Offset(-4, 0).Value = feedbackUID And _
+            Cells(i, 13).Offset(-4, 0).Value <> "" And Cells(i, 14).Offset(-4, 0).Value <> "" And _
+            Cells(i, 15).Offset(-4, 0).Value = "System.Intent" Then
+            
+            Cells(i, 32).Offset(-4, 0).Value = Cells(i, 13).Value
+            
+        ElseIf Cells(i, 5).Offset(-5, 0).Value = feedbackUID And _
+            Cells(i, 13).Offset(-5, 0).Value <> "" And Cells(i, 14).Offset(-5, 0).Value <> "" And _
+            Cells(i, 15).Offset(-5, 0).Value = "System.Intent" Then
+            
+            Cells(i, 32).Offset(-5, 0).Value = Cells(i, 13).Value
+            
+        End If
+    End If
+      
+        i = i + 1
+        
+Loop
+
+' Reset i for second loop
+'i = 2
+
+' Loop for Menu skills feedback
+'Do While i <= count
+    
+'    If Cells(i, 13).Value = "negativeFeedback" And Cells(i, 16).Value = "showAnswer" Then
+'        If Cells(i, 16).Offset(-4, -1).Value = "System.CommonResponse" And Cells(i, 5).Value = Cells(i, 5).Offset(-4, 0).Value Then
+'            If Cells(i, 13).Offset(-4, 0).Value <> "positiveFeedback" And Cells(i, 13).Offset(-4, 0).Value <> "negativeFeedback" Then
+'                Cells(i, 32).Offset(-4, 0).Value = "thumbsDown"
+'            End If
+'        End If
+'    End If
+
+'    If Cells(i, 13).Value = "positiveFeedback" And Cells(i, 16).Value = "showAnswer" Then
+'        If Cells(i, 16).Offset(-4, -1).Value = "System.CommonResponse" And Cells(i, 5).Value = Cells(i, 5).Offset(-4, 0).Value Then
+'            If Cells(i, 13).Offset(-4, 0).Value <> "positiveFeedback" And Cells(i, 13).Offset(-4, 0).Value <> "negativeFeedback" Then
+'                Cells(i, 32).Offset(-4, 0).Value = "thumbsUp"
+'            End If
+'        End If
+'    End If
+'        i = i + 1
+        
+'Loop
+
+End Sub
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Sub Transcript()
+'
+' Transcript Macro
+'
+' Keyboard Shortcut: Ctrl+Shift+T
+'
+
+Dim userID, curRow, firstRow, lastRow
+
+If ActiveSheet.Name = "YTD_Integrated" Then
+   
+    If ActiveCell.Column = 4 Then ' If active cell is USER ID...
+        'MsgBox ActiveCell.Column
+        Sheets.Add after:=ActiveSheet
+        ActiveSheet.Name = "Transcript"
+        
+        ' Move back to data sheet
+        Worksheets(3).Activate
+        
+        userID = ActiveCell.Value
+        curRow = ActiveCell.Row
+        firstRow = curRow - 6
+        lastRow = curRow + 5
+        
+        
+        Dim source, target As Range
+                
+        Set source = ActiveSheet.Range("A" & firstRow, "J" & lastRow)
+        
+        Set target = Sheets("Transcript").Range("A1", "J11")
+        
+        target.Value = source.Value
+              
+        Sheets("Transcript").Activate
+    
+        ' Adjust column widths appropriately
+        Columns("B:B").EntireColumn.AutoFit
+        Columns("B:B").EntireColumn.AutoFit
+        Columns("C:C").EntireColumn.AutoFit
+        Columns("D:D").EntireColumn.AutoFit
+        Columns("E:E").ColumnWidth = 10
+        Columns("F:F").ColumnWidth = 65
+        Columns("G:G").ColumnWidth = 65
+        Columns("H:H").EntireColumn.AutoFit
+        Columns("I:I").EntireColumn.AutoFit
+        Columns("J:J").EntireColumn.AutoFit
+
+        ' Filter remaining SuperDA data
+        ActiveSheet.Range("$A$1:$J$11").AutoFilter Field:=4, Criteria1:=userID, Operator:=xlFilterValues
+        
+        ' Remove text wrapping
+        Cells.WrapText = False
+    
+        Rows(1).Hidden = True
+        
+        MsgBox ("Click OK after reviewing")
+        
+        Application.DisplayAlerts = False
+        Sheets("Transcript").Delete
+        Application.DisplayAlerts = True
+        
+        Sheets("YTD_Integrated").Activate
+    
+    Else
+        MsgBox ("Utilize this function on the User ID field only.")
+
+    End If
+Else
+    MsgBox ("Can only be process on YTD_Integrated sheet.")
+
+End If
+
+    
+End Sub
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Sub UIDs()
+'
+' UIDs Macro
+'
+' Keyboard Shortcut: Ctrl+Shift+U
+'
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'''''''''' Replace system assigned UIDs with actual UIDs '''''''''''''
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+' Clear any active filters
+    ActiveSheet.AutoFilterMode = False
+
+' Sort by UserID and then Timestamp
+    With ActiveWorkbook.ActiveSheet.Sort
+        .SortFields.Clear
+        .SortFields.Add Key:=Range("F1"), Order:=xlAscending
+        .SortFields.Add Key:=Range("D1"), Order:=xlAscending
+        .SetRange Range("A:AF")
+        .Header = xlYes
+        .Apply
+    End With
+
+' Init vars
+    Dim realUID, systemUID
+    Dim rngA, rngB As Range
+    
+    Set ws = ActiveSheet
+    count = ws.Cells(Rows.count, "A").End(xlUp).Row
+    i = 2
+
+' Loop for NLP feedback
+Do While i <= count
+    
+    If InStr(1, Cells(i, 5).Value, "user") > 0 And _
+        InStr(1, Cells(i, 14).Value, "<span hidden id='uid'>") > 0 Then
+            systemUID = Cells(i, 5).Value
+            realUID = Left(Right(Cells(i, 14).Value, 13), 5)
+            
+            Columns("E:E").Select
+            Selection.Replace What:=systemUID, Replacement:=realUID, lookat:=xlPart _
+            , SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+            ReplaceFormat:=False, FormulaVersion:=xlReplaceFormula2
+        
+    End If
+         
+    i = i + 1
+        
+Loop
+
+End Sub
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Sub urlPuller()
+'
+' urlPuller Macro
+'
+
+' init vars
+Dim IdealMaximum
+Dim regEx As Object
+Dim curCell As Range
+
+Set regEx = CreateObject("VBScript.RegExp")
+IdealMaximum = 380
+      
+With regEx
+        .Pattern = "(http|ftp|https):\/\/([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:\/~+#-]*[\w@?^=%&\/~+#-])"
+        .Global = True
+        Range("P100").Value = .Replace(ActiveCell.Value, "")
+End With
+    
+' determine if cell length is ideal or not
+    If Len(Range("P100").Value) > IdealMaximum Then
+        Range("D2").Value = "Queried Cell Length: " & Len(Range("P100").Value)
+        Range("D2").Characters(22).Font.Color = vbRed
+        Range("P100").Value = ""
+    Else
+        Range("D2").Value = "Queried Cell Length: " & Len(Range("P100").Value)
+        Range("D2").Characters(22).Font.ColorIndex = 10 ' color value for dark green
+        Range("P100").Value = ""
+    End If
+
+End Sub
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
